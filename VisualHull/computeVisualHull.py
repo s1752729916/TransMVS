@@ -11,16 +11,16 @@ jsonPath = 'F:\\Research\\TransMVS\\synthetic\\bear\\json'
 maskPath = 'F:\\Research\\TransMVS\\synthetic\\bear\\masks'
 checkFolder = 'F:\\Research\\TransMVS\\check'
 resolution = 0.01
-minX,maxX = -1,1
+minX,maxX = -2,2
 minY,maxY = 3,6
-minZ,maxZ = -1,1
+minZ,maxZ = -2,2
 imgH = 1028
 imgW = 1232
 
 debug = True
 
 #-- 2. get camera positions and masks
-num,K,M,KM = loadCameraParams(jsonPath)
+num,K,M,KM,origin,target,up = loadCameraParams(jsonPath)
 masks = loadMasks(maskPath)
 #-- 3. create voxels
 x, y, z = np.meshgrid(
@@ -75,8 +75,8 @@ for i in range(num):
     print('Normals Num: %d' % normals.shape[0])
     print('Faces Num: %d' % faces.shape[0])
 
-    axisLen = float(resolution - 1) / 2.0
-    verts = (verts - axisLen) / axisLen * 1.7
+    # axisLen = float(resolution - 1) / 2.0
+    # verts = (verts - axisLen) / axisLen * 1.7
     mesh = trm.Trimesh(vertices=verts, vertex_normals=normals, faces=faces)
 
     if(debug ==True):

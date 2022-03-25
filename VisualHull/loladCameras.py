@@ -5,7 +5,7 @@ import numpy as np
 def loadCameraParams(jsonPath):
     # 从json文件中读取相机内参与外参
     # jsonPath: 存放json文件的根目录
-    # return: N,K(3,3,N), M(3,4,N), KM(3,4,N)
+    # return: N,K(3,3,N), M(3,4,N), KM(3,4,N), lookat_origin(3,N), lookat_target(3,N), lookat_up(3,N)
 
     searchStr = os.path.join(jsonPath,'*.json')
     jsonLists = glob.glob(searchStr)
@@ -14,6 +14,9 @@ def loadCameraParams(jsonPath):
     K = np.zeros([3,3,num])
     M = np.zeros([3,4,num])
     KM = np.zeros([3,4,num])
+    origin = np.zeros([3,num])
+    target = np.zeros([3,num])
+    up = np.zeros([3,num])
     for i in range(0,num):
         with open(jsonLists[i], 'r') as f:
             data = json.load(f)
@@ -37,9 +40,21 @@ def loadCameraParams(jsonPath):
         extrinsic = np.array(extrinsic)
         extrinsic = np.linalg.inv(extrinsic)
         M[:,:,i] = np.array(extrinsic)[0:3,:]
-
         KM[:,:,i] = np.matmul(K[:,:,i],M[:,:,i])
-    return num,K,M,KM
+
+        # 读取look at
+        look_origin = data[0]['extrinsic_lookat'][0]['origin'].split(',')
+        look_origin = np.array(look_origin).astype(np.float)
+        look_target = data[0]['extrinsic_lookat'][0]['target'].split(',')
+        look_target = np.array(look_target).astype(np.float)
+        look_up = data[0]['extrinsic_lookat'][0]['up'].split(',')
+        look_up = np.array(look_up).astype(np.float)
+        origin[:,i] = look_origin
+        target[:,i] = look_target
+        up[:,i] = look_up
+
+
+    return num,K,M,KM,origin,target,up
 if __name__ =='__main__':
     jsonPath = 'F:\\Research\\TransMVS\\synthetic\\bear\\json'
     loadCameraParams(jsonPath)
