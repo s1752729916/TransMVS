@@ -7,13 +7,13 @@ from skimage import measure
 from VisualHull.loladCameras import loadCameraParams
 from loadMasks import loadMasks
 #-- 1. configure
-jsonPath = 'F:\\Research\\TransMVS\\synthetic\\bear\\json'
-maskPath = 'F:\\Research\\TransMVS\\synthetic\\bear\\masks'
-checkFolder = 'F:\\Research\\TransMVS\\check'
-resolution = 0.01
-minX,maxX = -2,2
-minY,maxY = 3,6
-minZ,maxZ = -2,2
+jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/json'
+maskPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/masks'
+checkFolder = '/media/smq/移动硬盘/Research/TransMVS/check'
+resolution = 0.1
+minX,maxX = -30,10
+minY,maxY = 0,15
+minZ,maxZ = -10,10
 imgH = 1028
 imgW = 1232
 
@@ -23,7 +23,7 @@ debug = True
 num,K,M,KM,origin,target,up = loadCameraParams(jsonPath)
 masks = loadMasks(maskPath)
 #-- 3. create voxels
-x, y, z = np.meshgrid(
+y,x, z = np.meshgrid(
     np.linspace(minX, maxX, int((maxX-minX)/resolution)),
     np.linspace(minY, maxY, int((maxY-minY)/resolution)),
     np.linspace(minZ, maxZ, int((maxZ-minZ)/resolution))) # (256,256,256)
@@ -67,10 +67,20 @@ for i in range(num):
     a = np.sum(volumeInd==1)
     volume[volumeInd==0] = 1 # 表示占有，当volumeInd的值为0的时候表示占有,为什么mask值为0的时候是占有呢,确实occupied voxel指代的是除了模型之外的体素，可能是marching cube算法所要求的。
 
-
     print('Occupied voxel: %d' % np.sum((volume > 0).astype(np.float32)))
+    verts, faces, normals, _ = measure.marching_cubes_lewiner(volume)
 
-    verts, faces, normals, _ = measure.marching_cubes_lewiner(volume, 0)
+    # convert coordinates from voxel to MinMax bounds
+    # verts_x = verts[:,0]
+    # verts_y = verts[:,1]
+    # verts_z = verts[:,2]
+
+    num_x = int((maxX-minX)/resolution)
+    num_y = int((maxY-minY)/resolution)
+    num_z = int((maxZ-minZ)/resolution)
+    verts[:,0] = (verts[:,0]/num_x)*(maxX-minX)+minX
+    verts[:,1] = (verts[:,1]/num_y)*(maxY-minY)+minY
+    verts[:,2] = (verts[:,2]/num_z)*(maxZ-minZ)+minZ
     print('Vertices Num: %d' % verts.shape[0])
     print('Normals Num: %d' % normals.shape[0])
     print('Faces Num: %d' % faces.shape[0])
@@ -78,7 +88,6 @@ for i in range(num):
     # axisLen = float(resolution - 1) / 2.0
     # verts = (verts - axisLen) / axisLen * 1.7
     mesh = trm.Trimesh(vertices=verts, vertex_normals=normals, faces=faces)
-
     if(debug ==True):
         mesh.export(os.path.join(checkFolder, str(i).zfill(3)+'-check.ply'))
 

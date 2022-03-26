@@ -17,17 +17,21 @@ def reprojection(mesh,origin,target):
 
 
 if __name__ =='__main__':
-    jsonPath = 'F:\\Research\\TransMVS\\synthetic\\bear\\json'
-    # mesh = trm.load('F:\\Research\\TransMVS\\check\\017-check.ply')
-    mesh = psbody.mesh.Mesh(filename='F:\\Research\\TransMVS\\check\\017-check.ply')
+    jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/json'
+    trimesh = trm.load('/media/smq/移动硬盘/Research/TransMVS/check/017-check.ply')
+    b =  trimesh.vertices
+
+    mesh = psbody.mesh.Mesh(filename='/media/smq/移动硬盘/Research/TransMVS/check/017-check.ply')
     num,K,M,KM,origin,target,up = loadCameraParams(jsonPath)
-
-
+    a = mesh.v
+    cam = origin[:,17]-target[:,17]
+    new_mesh = mesh.visibile_mesh(camera=np.array([cam]))
+    new_mesh.show()
+    # vis = vis.squeeze()
+    # print('vis.shape',vis)
+    print('vers:',mesh.v.shape)
     # cam = target[:,0]-origin[:,0]
-    cam = np.array([0,0,0])
     print(cam)
-    visible_mesh = mesh.visibile_mesh(cam)
-    visible_mesh.show()
     print(K[:,:,0])
     camera = trimesh.scene.Camera(name = 'camera', resolution=[1232,1028],focal = [1.85426858e+03,1.85426858e+03])
     print(camera.K)
