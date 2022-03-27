@@ -10,22 +10,22 @@ from loadMasks import loadMasks
 jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/json'
 maskPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/masks'
 checkFolder = '/media/smq/移动硬盘/Research/TransMVS/check'
-resolution = 0.1
-minX,maxX = -30,10
-minY,maxY = 0,15
-minZ,maxZ = -10,10
+resolution = 0.01
+minX,maxX = -2,2
+minY,maxY = 2,8
+minZ,maxZ = -2,2
 imgH = 1028
 imgW = 1232
 
 debug = True
 
 #-- 2. get camera positions and masks
-num,K,M,KM,origin,target,up = loadCameraParams(jsonPath)
+num,K,M,KM,origins,targets,ups = loadCameraParams(jsonPath)
 masks = loadMasks(maskPath)
 #-- 3. create voxels
 y,x, z = np.meshgrid(
-    np.linspace(minX, maxX, int((maxX-minX)/resolution)),
     np.linspace(minY, maxY, int((maxY-minY)/resolution)),
+    np.linspace(minX, maxX, int((maxX-minX)/resolution)),
     np.linspace(minZ, maxZ, int((maxZ-minZ)/resolution))) # (256,256,256)
 x = x[:, :, :, np.newaxis] # (256,256,256,1)
 y = y[:, :, :, np.newaxis] # (256,256,256,1)
@@ -38,21 +38,28 @@ for i in range(num):
     print('Processing {}/{} mask:'.format(i+1, num))
     seg = masks[:,:,i]
     mask = seg.reshape(imgH*imgW)
-    fx = K[:,:,i][0,0]
-    fy = K[:,:,i][1,1]
-    cx = K[:,:,i][0,2]
-    cy = K[:,:,i][1,2]
-    Rot = M[:,0:3,i]
-    Trans = M[:,3,i]
-    Trans = Trans.reshape([1,1,1,3,1]) # 转换成这个样子是为了可以后coord直接相加
-    coordCam = np.matmul(Rot,np.expand_dims(coord,axis=4)) + Trans # 先将coord转换成(256,256,256,3,1)，再与Rot相乘，得到(256,256,256,3,1)，再与Trans相加，这步是将世界系的体素坐标转换到相机坐标系中去
+
+    f = K[:, :, i][0, 0]
+    cx = K[:, :, i][0, 2]
+    cy = K[:, :, i][1, 2]
+
+    origin = origins[:,i]
+    target = targets[:,i]
+    up = ups[:,i]
+    yAxis = up / np.sqrt(np.sum(up * up))
+    zAxis = target - origin
+    zAxis = zAxis / np.sqrt(np.sum(zAxis * zAxis))
+    xAxis = np.cross(zAxis, yAxis)
+    xAxis = xAxis / np.sqrt(np.sum(xAxis * xAxis))
+    Rot = np.stack([xAxis, yAxis, zAxis], axis=0)
+    coordCam = np.matmul(Rot, np.expand_dims(coord - origin, axis=4))
     coordCam = coordCam.squeeze(4)
-    xCam = coordCam[:,:,:,0]/coordCam[:,:,:,2] # 归一化过程
-    yCam = coordCam[:,:,:,1]/coordCam[:,:,:,2]
+    xCam = coordCam[:, :, :, 0] / coordCam[:, :, :, 2]
+    yCam = coordCam[:, :, :, 1] / coordCam[:, :, :, 2]
 
 
-    xId = xCam*fx + cx
-    yId = yCam*fy + cy # 这里代码里用的-yCam*f，不知道为什么，先试一下吧
+    xId = xCam*f + cx
+    yId = -yCam*f + cy # 这里代码里用的-yCam*f，不知道为什么，先试一下吧 becauuse the camera coordinate(y is direction toward to up) is different with pixel coordinate(y is toward to bottom of the image)
     xInd = np.logical_and(xId>=0,xId<imgW-0.5)
     yInd = np.logical_and(yId>=0,yId<imgH-0.5)
     imInd = np.logical_and(xInd,yInd) # x,y都在范围内的点(256,256,256),在范围内表示为1，不在表示为0
@@ -71,10 +78,6 @@ for i in range(num):
     verts, faces, normals, _ = measure.marching_cubes_lewiner(volume)
 
     # convert coordinates from voxel to MinMax bounds
-    # verts_x = verts[:,0]
-    # verts_y = verts[:,1]
-    # verts_z = verts[:,2]
-
     num_x = int((maxX-minX)/resolution)
     num_y = int((maxY-minY)/resolution)
     num_z = int((maxZ-minZ)/resolution)
@@ -85,9 +88,7 @@ for i in range(num):
     print('Normals Num: %d' % normals.shape[0])
     print('Faces Num: %d' % faces.shape[0])
 
-    # axisLen = float(resolution - 1) / 2.0
-    # verts = (verts - axisLen) / axisLen * 1.7
-    mesh = trm.Trimesh(vertices=verts, vertex_normals=normals, faces=faces)
+    mesh = trm.Trimesh(vertices=verts, faces=faces)
     if(debug ==True):
         mesh.export(os.path.join(checkFolder, str(i).zfill(3)+'-check.ply'))
 
