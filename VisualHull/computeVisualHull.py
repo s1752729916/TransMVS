@@ -43,22 +43,16 @@ for i in range(num):
     cx = K[:, :, i][0, 2]
     cy = K[:, :, i][1, 2]
 
-    origin = origins[:,i]
-    target = targets[:,i]
-    up = ups[:,i]
-    yAxis = up / np.sqrt(np.sum(up * up))
-    zAxis = target - origin
-    zAxis = zAxis / np.sqrt(np.sum(zAxis * zAxis))
-    xAxis = np.cross(zAxis, yAxis)
-    xAxis = xAxis / np.sqrt(np.sum(xAxis * xAxis))
-    Rot = np.stack([xAxis, yAxis, zAxis], axis=0)
-    coordCam = np.matmul(Rot, np.expand_dims(coord - origin, axis=4))
+
+    Rot = M[:,0:3,i]
+    t = M[:,3,i].reshape([1,1,1,3,1])
+    coordCam = np.matmul(Rot, np.expand_dims(coord, axis=4)) + t
     coordCam = coordCam.squeeze(4)
     xCam = coordCam[:, :, :, 0] / coordCam[:, :, :, 2]
     yCam = coordCam[:, :, :, 1] / coordCam[:, :, :, 2]
 
 
-    xId = xCam*f + cx
+    xId = -xCam*f + cx
     yId = -yCam*f + cy # 这里代码里用的-yCam*f，不知道为什么，先试一下吧 becauuse the camera coordinate(y is direction toward to up) is different with pixel coordinate(y is toward to bottom of the image)
     xInd = np.logical_and(xId>=0,xId<imgW-0.5)
     yInd = np.logical_and(yId>=0,yId<imgH-0.5)
@@ -91,4 +85,3 @@ for i in range(num):
     mesh = trm.Trimesh(vertices=verts, faces=faces)
     if(debug ==True):
         mesh.export(os.path.join(checkFolder, str(i).zfill(3)+'-check.ply'))
-
