@@ -4,15 +4,9 @@ import trimesh.scene
 import psbody.mesh
 from VisualHull.loladCameras import loadCameraParams
 import numpy as np
-from psbody.mesh.visibility import visibility_compute
 import matplotlib.pyplot as plt
 import time
-import torch
-def normalReprojection(vertices_tensor,visibility_tensor,xPixel_tensor,yPixel_tensor,K_tensor,M_tensor):
-    if(len(visibility)==len(xPixel)==len(yPixel)):
-        pass
-    else:
-        raise RuntimeError('normalReprojection: visibility size different from xPixel,yPixel')
+
 
 
 
