@@ -7,8 +7,8 @@ from skimage import measure
 from VisualHull.loladCameras import loadCameraParams
 from loadMasks import loadMasks
 #-- 1. configure
-jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/json'
-maskPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/masks'
+jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/json'
+maskPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/masks'
 checkFolder = '/media/smq/移动硬盘/Research/TransMVS/check'
 resolution = 0.01
 minX,maxX = -2,2
@@ -69,8 +69,7 @@ for i in range(num):
     volume[volumeInd==0] = 1 # 表示占有，当volumeInd的值为0的时候表示占有,为什么mask值为0的时候是占有呢,确实occupied voxel指代的是除了模型之外的体素，可能是marching cube算法所要求的。
 
     print('Occupied voxel: %d' % np.sum((volume > 0).astype(np.float32)))
-    verts, faces, normals, _ = measure.marching_cubes_lewiner(volume)
-
+    verts, faces, normals, _ = measure.marching_cubes(volume)
     # convert coordinates from voxel to MinMax bounds
     num_x = int((maxX-minX)/resolution)
     num_y = int((maxY-minY)/resolution)

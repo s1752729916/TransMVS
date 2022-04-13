@@ -3,16 +3,18 @@ import os.path
 import matplotlib.pyplot as plt
 import torch
 import trimesh as trm
-from VisualHull.loladCameras import loadCameraParams
-from VisualHull.reprojection import reprojection
 import numpy as np
 import psbody.mesh
-from Optimization.loadAoLP import loadAoLP
 import math
+
+from VisualHull.loladCameras import loadCameraParams
+from VisualHull.reprojection import reprojection
+from Optimization.loadNormals import loadNormals
+from Optimization.loadAoLP import loadAoLP
 
 class Model():
 
-    def __init__(self, mesh, aolps, K, M, origin, verbose=False):
+    def __init__(self, mesh, aolps,normals, K, M, origin, verbose=False):
         """
         Return a torch model for processing optimazation problem
         Parameters
@@ -36,19 +38,24 @@ class Model():
         self.Ks = K  # numpy
         self.Ms = M  # numpy
         self.aolps = aolps
+        self.normals = normals
 
         self.H = 1028
         self.W = 1232
         self.verbose = verbose
 
         # optimizer params
-        self.lr = 5e-4
+        self.lr = 1e-3
+        self.lr_scheduler = 'StepLR'
+        self.step_size = 10
+        self.gamma = 0.1
 
         # loss params
-        self.q = 2.2
+        self.q = 2
         self.k = 0.5
-        self.tau_1 = 1
+        self.tau_1 = 0.5
         self.tau_2 = 1
+        self.tau_3 = 0.3
 
 
     def subdivision(self,rawMesh,iter = 4):
@@ -167,32 +174,67 @@ class Model():
 
     def setup_optimizer(self):
         self.optimizer = torch.optim.Adam(params=[self.vertices], lr=self.lr)
+        self.schudeler = torch.optim.lr_scheduler.StepLR(optimizer=self.optimizer,step_size=self.step_size,gamma=self.gamma)
 
     def optimize(self):
         self.optimizer.zero_grad()
         loss = self.computeLoss()
-
         loss.backward()
         self.optimizer.step()
+        self.schudeler.step()
+
+        print('learn_rate',self.schudeler.get_last_lr()[0])
 
 
     def computeLoss(self):
         loss_pol = self.computePolarmetricLoss()*self.tau_1
         loss_gsm = self.computeGeometricSmoothLoss()*self.tau_2
-        loss_all = loss_pol + loss_gsm
+        loss_normal = self.comptuteNormalLoss()*self.tau_3
+        loss_all = loss_pol + loss_gsm + loss_normal
         print('loss_gsm:',loss_gsm)
         print('loss_pol:',loss_pol)
+        print('loss_normal',loss_normal)
         print('loss_all:',loss_all)
         return loss_all
+    def comptuteNormalLoss(self):
+        # compute the normal loss between faces normals and ground-truth normals
+        loss_all  = torch.zeros(self.faces.shape[0], 1)
+        visibility = torch.zeros_like(torch.from_numpy(self.visibilityFaces[0].astype(np.float64)))
+        for i in range(0,self.N):
+            visibleNormals = self.projectedFaceNormals[i]
+            xPixel = self.face_xPixels[i]
+            yPixel = self.face_yPixels[i]
+
+            normal_true = (self.normals[:,:,:,i].astype(np.float64) - 127.5) / 127.5  # convert to (-1,1)
+            normal_true = torch.from_numpy(normal_true)
+            corresponding_normal_true = normal_true[yPixel,xPixel,:]
+
+
+            loss = visibleNormals * corresponding_normal_true
+            # self.showNormal(corresponding_normal_true,self.face_xPixels[i],self.face_yPixels[i])
+
+            loss = torch.sum(loss, dim=1)
+            eps = 1e-10
+            loss = torch.clamp(loss, (-1.0 + eps), (1.0 - eps))
+            loss = torch.pow(torch.acos(loss) / torch.pi,2.2)
+
+            loss_all[torch.where(torch.from_numpy(self.visibilityFaces[i].astype(np.int32)).type(torch.long))] += loss.reshape(-1,1)
+
+            visibility += self.visibilityFaces[i]
+
+        loss_all = loss_all/(visibility).reshape(-1,1)
+        loss_all[torch.where(visibility<1)] = 0
+
+        return loss_all.sum()
 
     def computePolarmetricLoss(self):
         # compute the polarmetric loss defined in Polarimetric Multi-View Inverse Rendering(2020,ECCV)
-        loss_all = torch.zeros(self.faces.shape[0], 1)
-        visibility = torch.zeros_like(torch.from_numpy(self.visibilityFaces[0].astype(np.float64)))
+        loss_all = torch.zeros(self.vertices.shape[0], 1)
+        visibility = torch.zeros_like(torch.from_numpy(self.visibilityVerts[0].astype(np.float64)))
         for i in range(0, self.N):
-            loss = torch.zeros(self.faces.shape[0],1)
+            loss = torch.zeros(self.vertices.shape[0],1)
             # -- 1. get azimith angles of visible veretex normals N(X)
-            verts_normals_cam = self.projectedFaceNormals[i]
+            verts_normals_cam = self.projectedVertNormals[i]
             # self.showNormal(verts_normals_cam.detach().numpy(),self.vert_xPixels[i],self.vert_yPixels[i])
             verts_azimuth_angles = torch.atan2(verts_normals_cam[:, 1], verts_normals_cam[:, 0])  # (-pi,pi)
             verts_azimuth_angles = torch.remainder(verts_azimuth_angles, torch.pi * 2)  # (0,2*pi)
@@ -205,9 +247,11 @@ class Model():
 
             # -- 2. compute loss
             aolp = torch.from_numpy(self.aolps[:, :, i])
-            aolp_corresponding = aolp[self.face_xPixels[i], self.face_yPixels[i]].type(
+            aolp_corresponding = aolp[self.vert_yPixels[i], self.vert_xPixels[i]].type(
                 torch.float64)  # get corresponding aolp for visible vertices
             aolp_corresponding = aolp_corresponding / 255 * torch.pi  # convert to (0,pi)
+
+
 
             aolp_1 = aolp_corresponding
             aolp_2 = aolp_corresponding + torch.pi
@@ -227,12 +271,20 @@ class Model():
             eta, indices = torch.min(eta, dim=1)
             eta = 4 * eta / torch.pi
             theta = 1 - eta
-            visibleLoss = (torch.exp(-self.k*theta)-math.exp(-self.k)).reshape(-1,1)
+            visibleLoss = torch.pow((torch.exp(-self.k*theta)-math.exp(-self.k)),2)
 
-            loss[torch.where(torch.from_numpy(self.visibilityFaces[i].astype(np.int32)).type(torch.long))] = visibleLoss
+            loss[torch.where(torch.from_numpy(self.visibilityVerts[i].astype(np.int32)).type(torch.long))] = visibleLoss.reshape(-1,1)
 
             loss_all += loss
-            visibility += self.visibilityFaces[i]
+            visibility += self.visibilityVerts[i]
+
+            # save error map
+            error_map = np.zeros_like(aolp).astype(np.float64)
+            error_map[self.vert_yPixels[i],self.vert_xPixels[i]] = np.sqrt(visibleLoss.detach().numpy())
+            error_map = (error_map*255).astype(np.uint8)
+            imageio.imwrite(os.path.join('/media/smq/移动硬盘/Research/TransMVS/optimize_check',str(i).zfill(3) + '-error_map.png'),error_map)
+
+
 
         loss_all = loss_all/(visibility).reshape(-1,1)
         loss_all[torch.where(visibility<1)] = 0
@@ -270,7 +322,8 @@ class Model():
         loss = torch.sum(loss, dim=1)
         eps = 1e-10
         loss = torch.clamp(loss, (-1.0 + eps), (1.0 - eps))
-        loss = torch.pow(torch.acos(loss)/torch.pi,self.q)
+        loss = torch.acos(loss)/torch.pi
+        loss = torch.pow(loss,self.q)
         loss = torch.sum(loss)
         # visibleNormal = neighbors_mean_normals[torch.where(torch.from_numpy(self.visibilityFaces[0]).type(torch.long))]
         # visibleNormalCam = self.projectNormals(visibleNormal,self.Ms[:,:,0])
@@ -310,30 +363,33 @@ class Model():
 
 
 if __name__ == "__main__":
-    jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/json'
-    trimesh = trm.load('/media/smq/移动硬盘/Research/TransMVS/check/017-check.ply')
+    jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/json'
+    trimesh = trm.load('/media/smq/移动硬盘/Research/TransMVS/result/cow-vh.ply')
     checkPath = '/media/smq/移动硬盘/Research/TransMVS/optimize_check'
-    aolpPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/standard-params/AoLP'
+    aolpPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/params/AoLP'
+    normalPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/normals-png'
+
     import imageio
 
     new_mesh = trm.Trimesh(vertices=trimesh.vertices)
     aolps = loadAoLP(aolpPath=aolpPath)
-    mask = imageio.imread('/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/masks/005-view.png')
+    normals = loadNormals(normalsPath=normalPath)
     num, K, M, KM, origin, target, up = loadCameraParams(jsonPath)
-    model = Model(mesh=trimesh, aolps=aolps, K=K, M=M, origin=origin, verbose=False)
+    model = Model(mesh=trimesh, aolps=aolps,normals=normals, K=K, M=M, origin=origin, verbose=False)
     # model.showMesh(v=model.vertices.detach().numpy(),f=model.faces.detach().numpy())
 
     # model.showMesh(v=new_mesh.vertices,f=new_mesh.faces)
 
     model.saveMesh(v=model.vertices.detach().numpy(), f=model.faces.detach().numpy(),
                    path=os.path.join(checkPath, 'raw-check.ply'))
+
+    model.setup_optimizer()
     for i in range(0, 100):
         print('#'*30)
         print('processing %d' % i)
         model.computeVisibility()
         model.calculateNormals()
         model.reprojectNormals()
-        model.setup_optimizer()
         model.optimize()
         model.saveMesh(v=model.vertices.detach().numpy(), f=model.faces.detach().numpy(),
                        path=os.path.join(checkPath, str(i).zfill(3) + '-check.ply'))
