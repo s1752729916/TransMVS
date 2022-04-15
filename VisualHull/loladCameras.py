@@ -41,14 +41,13 @@ def loadCameraParams(jsonPath):
         extrinsic = np.linalg.inv(extrinsic)
         M[:,:,i] = np.array(extrinsic)[0:3,:]
         KM[:,:,i] = np.matmul(K[:,:,i],M[:,:,i])
-
         # 读取look at
         look_origin = data[0]['extrinsic_lookat'][0]['origin'].split(',')
         look_origin = np.array(look_origin).astype(np.float)
         look_target = data[0]['extrinsic_lookat'][0]['target'].split(',')
         look_target = np.array(look_target).astype(np.float)
         look_up = data[0]['extrinsic_lookat'][0]['up'].split(',')
-        look_up = np.array(look_up).astype(np.float)
+        look_up = np.array(look_up).astype(np.float64)
         origin[:,i] = look_origin
         target[:,i] = look_target
         up[:,i] = look_up
@@ -56,5 +55,5 @@ def loadCameraParams(jsonPath):
 
     return num,K,M,KM,origin,target,up
 if __name__ =='__main__':
-    jsonPath = 'F:\\Research\\TransMVS\\synthetic\\bear\\json'
+    jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/json'
     loadCameraParams(jsonPath)

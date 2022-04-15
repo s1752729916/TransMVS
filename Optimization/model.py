@@ -24,7 +24,7 @@ class Model():
         """
         super(Model, self).__init__()
         self.rawMesh = mesh
-        self.newMesh = self.subdivision(self.rawMesh,iter=0)
+        self.newMesh = self.subdivision(self.rawMesh,iter=1)
         self.vertices = torch.from_numpy(self.newMesh.vertices)  # [n,3]
         self.vertices.requires_grad = True
         self.faces = torch.from_numpy(self.newMesh.faces)  # [m,3]
@@ -47,7 +47,7 @@ class Model():
         # optimizer params
         self.lr = 1e-3
         self.lr_scheduler = 'StepLR'
-        self.step_size = 10
+        self.step_size = 40
         self.gamma = 0.1
 
         # loss params
@@ -55,7 +55,7 @@ class Model():
         self.k = 0.5
         self.tau_1 = 0.5
         self.tau_2 = 1
-        self.tau_3 = 0.3
+        self.tau_3 = 1
 
 
     def subdivision(self,rawMesh,iter = 4):
@@ -168,7 +168,7 @@ class Model():
         Rot = torch.from_numpy(M[:, 0:3]).float()
         normalCam = torch.matmul(Rot, normal_tensor.view(-1, 3, 1))
         normalCam = torch.squeeze(normalCam, dim=2)
-        normalCam[:, 0] = -normalCam[:, 0]
+        normalCam[:, 1] = -normalCam[:, 1]
         normalCam[:, 2] = -normalCam[:, 2]
         return normalCam
 
@@ -190,7 +190,7 @@ class Model():
         loss_pol = self.computePolarmetricLoss()*self.tau_1
         loss_gsm = self.computeGeometricSmoothLoss()*self.tau_2
         loss_normal = self.comptuteNormalLoss()*self.tau_3
-        loss_all = loss_pol + loss_gsm + loss_normal
+        loss_all = loss_gsm + loss_normal
         print('loss_gsm:',loss_gsm)
         print('loss_pol:',loss_pol)
         print('loss_normal',loss_normal)
@@ -364,17 +364,19 @@ class Model():
 
 if __name__ == "__main__":
     jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/json'
-    trimesh = trm.load('/media/smq/移动硬盘/Research/TransMVS/result/cow-vh.ply')
+    trimesh = trm.load('/media/smq/移动硬盘/Research/TransMVS/result/cow-idr.ply')
     checkPath = '/media/smq/移动硬盘/Research/TransMVS/optimize_check'
     aolpPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/params/AoLP'
     normalPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/normals-png'
-
+    cam_file = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/cameras_new.npz'
+    n = 40
     import imageio
-
+    from Optimization.dadaset.loadIdrParams import loadIdrParams
     new_mesh = trm.Trimesh(vertices=trimesh.vertices)
     aolps = loadAoLP(aolpPath=aolpPath)
     normals = loadNormals(normalsPath=normalPath)
-    num, K, M, KM, origin, target, up = loadCameraParams(jsonPath)
+    # num, K, M, KM, origin, target, up = loadCameraParams(jsonPath)
+    K,M,KM,origin = loadIdrParams(cam_file,n)
     model = Model(mesh=trimesh, aolps=aolps,normals=normals, K=K, M=M, origin=origin, verbose=False)
     # model.showMesh(v=model.vertices.detach().numpy(),f=model.faces.detach().numpy())
 

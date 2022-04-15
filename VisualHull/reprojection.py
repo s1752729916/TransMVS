@@ -70,14 +70,16 @@ def reprojection(mesh,origin,K,M):
     Rot = M[:,0:3]
 
     t = M[:,3].reshape([1,3,1])
+
     # reproject vertices to pixel coordinate
     verts = triMesh.vertices
     verts_cam_coord = np.matmul(Rot,np.expand_dims(verts, axis=2)) + t
     verts_cam_coord = verts_cam_coord.squeeze(2)
     xCam = verts_cam_coord[:,0]/verts_cam_coord[:,2]
     yCam = verts_cam_coord[:,1]/verts_cam_coord[:,2]
-    xPixel =  np.round(-xCam*fx + cx).astype(np.int32)
-    yPixel = np.round(-yCam*fy + cy).astype(np.int32)
+    xPixel = np.round(xCam*fx - cx).astype(np.int32)
+    yPixel = np.round(yCam*fy - cy).astype(np.int32)
+
 
     # reproject position of faces to pixel coordinate
     face_positions = np.mean(verts[triMesh.faces],axis = 1)
@@ -85,8 +87,8 @@ def reprojection(mesh,origin,K,M):
     faces_cam_coord = faces_cam_coord.squeeze(2)
     faces_xCam = faces_cam_coord[:,0]/faces_cam_coord[:,2]
     faces_yCam = faces_cam_coord[:,1]/faces_cam_coord[:,2]
-    faces_xPixel =  np.round(-faces_xCam*fx + cx).astype(np.int32)
-    faces_yPixel = np.round(-faces_yCam*fy + cy).astype(np.int32)
+    faces_xPixel = np.round(faces_xCam*fx - cx).astype(np.int32)
+    faces_yPixel = np.round(faces_yCam*fy - cy).astype(np.int32)
 
     img = np.zeros([1028,1232]).astype(np.uint8)
     img[faces_yPixel,faces_xPixel] = 255
@@ -99,7 +101,7 @@ def reprojection(mesh,origin,K,M):
     vertNormals = triMesh.vertex_normals
     normalsCam = np.matmul(Rot,np.expand_dims(vertNormals, axis=2))
     normalsCam = normalsCam.squeeze(2)
-    normalsCam[:,0] = -normalsCam[:,0] # conver to normal space
+    normalsCam[:,1] = -normalsCam[:,1] # conver to normal space
     normalsCam[:,2] = -normalsCam[:,2]
     # normal_img = np.zeros([H,W,3]).astype(np.uint8)
     # normal_img[yPixel,xPixel,0] = ((normalsCam[:,0] + 1)*127.5).astype(np.uint8) # for display
@@ -123,18 +125,21 @@ def reprojection(mesh,origin,K,M):
 
 
 if __name__ =='__main__':
-    jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/json'
-    trimesh = trm.load('/media/smq/移动硬盘/Research/TransMVS/check/017-check.ply')
+    jsonPath = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/json'
+    cam_file = '/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/cameras_new.npz'
+
+    trimesh = trm.load('/media/smq/移动硬盘/Research/TransMVS/result/cow-idr.ply')
 
 
     fig = plt.figure()
     import imageio
-    mask = imageio.imread('/media/smq/移动硬盘/Research/TransMVS/synthetic/bear/masks/005-view.png')
+    mask = imageio.imread('/media/smq/移动硬盘/Research/TransMVS/synthetic/cow/masks/005-view.png')
     plt.imshow(mask)
-    mesh = psbody.mesh.Mesh(filename='/media/smq/移动硬盘/Research/TransMVS/check/017-check.ply')
-
-    num,K,M,KM,origin,target,up = loadCameraParams(jsonPath)
-    n,xPixel,yPixel,faces_xPixel,faces_yPixel,normalsCam,triMesh,visibilityVerts,visibilityFaces = reprojection(mesh = trimesh,origin = origin[:,0],  K = K[:,:,0],M = M[:,:,0])
+    mesh = psbody.mesh.Mesh(filename='/media/smq/移动硬盘/Research/TransMVS/result/cow-idr.ply')
+    from Optimization.dadaset.loadIdrParams import loadIdrParams
+    K, M, KM, origin = loadIdrParams(cam_file=cam_file,n=40)
+    # num,K,M,KM,origin,target,up = loadCameraParams(jsonPath)
+    n,xPixel,yPixel,faces_xPixel,faces_yPixel,normalsCam,triMesh,visibilityVerts,visibilityFaces = reprojection(mesh = trimesh,origin = origin[:,5],  K = K[:,:,5],M = M[:,:,5])
     fig = plt.figure()
     normals = np.zeros([1028,1232,3])
     normals[yPixel,xPixel] = normalsCam
